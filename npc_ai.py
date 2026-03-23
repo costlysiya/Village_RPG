@@ -62,10 +62,10 @@ def get_npc_response(npc_id, current_affinity, user_message):
 # =====================================================================
 if __name__ == "__main__":
     print("=== NPC 테스트 서버 ===")
-    print("대화할 NPC를 선택하세요: 1.치즈(고양이) | 2.로빈(목수) | 3.아이나(식물학자) | 4.리처드(촌장)")
+    print("대화할 NPC를 선택하세요: 1.치즈(고양이) | 2.로빈(목수) | 3.아이나(식물학자) | 4.리처드(촌장) | 5.올리비아(식당 주인)")
     
-    npc_map = {"1": "cheese", "2": "robin", "3": "aina", "4": "richard"}
-    choice = input("번호 입력 (1~4): ").strip()
+    npc_map = {"1": "cheese", "2": "robin", "3": "aina", "4": "richard", "5": "olivia"}
+    choice = input("번호 입력 (1~5): ").strip()
     
     target_npc = npc_map.get(choice)
     
