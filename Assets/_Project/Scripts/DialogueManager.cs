@@ -1,4 +1,4 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
@@ -6,9 +6,9 @@ using UnityEngine.UI;
 
 public class DialogueManager : MonoBehaviour
 {
-    public static DialogueManager Instance; // ½Ì±ÛÅæ
+    public static DialogueManager Instance;
 
-    [Header("UI ¿¬°á")]
+    [Header("UI ì—°ê²°")]
     public GameObject dialoguePanel;
     public GameObject intimacyPanel;
     public TextMeshProUGUI nameText;
@@ -16,122 +16,102 @@ public class DialogueManager : MonoBehaviour
     public GameObject interactionGuide;
     public TMP_InputField inputField;
 
-    [Header("¼³Á¤")]
+    [Header("ì„¤ì •")]
     public float typingSpeed = 0.05f;
 
-    private Queue<string> sentences; // ¹®ÀåµéÀ» ´ã¾ÆµÑ FIFO Å¥
-    private bool isTyping = false;   // ÇöÀç ±ÛÀÚ°¡ ÃÄÁö´Â ÁßÀÎ°¡?
-    private string currentSentence;  // ÇöÀç Ãâ·Â ÁßÀÎ ¹®Àå ÀüÃ¼ µ¥ÀÌÅÍ
-    private TextMeshProUGUI guideText; // °¡ÀÌµå ¾ÈÀÇ ½ÇÁ¦ ÅØ½ºÆ® ÄÄÆ÷³ÍÆ®
+    [Header("í•˜íŠ¸ ë¦¬ìŠ¤íŠ¸")]
+    public Sprite fullHeart;
+    public Sprite emptyHeart;
+    public Image[] heartImages;
 
-    [Header("ÇÏÆ® ¸®½ºÆ® ¹æ½Ä")]
-    public Sprite fullHeart;   // »¡°£ ÇÏÆ® ÀÌ¹ÌÁö (ÀÎ½ºÆåÅÍ¿¡¼­ µå·¡±×)
-    public Sprite emptyHeart;  // È¸»ö ÇÏÆ® ÀÌ¹ÌÁö (ÀÎ½ºÆåÅÍ¿¡¼­ µå·¡±×)
-    public Image[] heartImages; // ÇÏÀÌ¶óÅ°ÀÇ ÇÏÆ® 10°³¸¦ ¿©±â¿¡ µå·¡±×ÇØ¼­ ³ÖÀ½
-
-    //private Dictionary<string, int> npcIntimacyData = new Dictionary<string, int>(); //npcº° È£°¨µµ ÀúÀå
-    // private npcIntimacy;
-    private string currentTalkingNPC; // ÇöÀç ´ëÈ­ ÁßÀÎ NPC ÀÌ¸§ ÀúÀå¿ë
-
+    private Queue<string> sentences;
+    private bool isTyping = false;
+    private bool isWaitingForServer = false;
+    private string currentSentence;
+    private string currentTalkingNPCId; // ì„œë²„ ì „ì†¡ìš© ID ì €ì¥
 
     void Awake()
     {
         Instance = this;
         sentences = new Queue<string>();
-
-        // °¡ÀÌµå ÅØ½ºÆ® ÄÄÆ÷³ÍÆ® ¹Ì¸® Ã£¾ÆµÎ±â
-        if (interactionGuide != null)
-            guideText = interactionGuide.GetComponentInChildren<TextMeshProUGUI>();
-
-        // ÃÊ±â »óÅÂ ¼³Á¤
         dialoguePanel.SetActive(false);
         intimacyPanel.SetActive(false);
-        if (inputField != null) inputField.gameObject.SetActive(false);
+        
+        if (inputField != null)
+        {
+            inputField.gameObject.SetActive(false);
+            inputField.onSubmit.AddListener(delegate { OnSubmitInput(); });
+        }
     }
 
-    void Update()
+    // IDë¥¼ í•œê¸€ ì´ë¦„ìœ¼ë¡œ ë°”ê¿”ì£¼ëŠ” í—¬í¼ í•¨ìˆ˜
+    private string GetKoreanName(string id)
     {
-        // 1. ´ëÈ­Ã¢ÀÌ ÄÑÁ® ÀÖÀ» ¶§¸¸ ÀÛµ¿
-        if (dialoguePanel.activeSelf)
+        switch (id)
         {
-            // 2. ESC Å°¸¦ ´©¸£¸é Áï½Ã ´ëÈ­ Á¾·á (°­Á¦ Å»Ãâ)
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                EndDialogueForced();
-                return;
-            }
+            case "Yellow Cat": return "ì¹˜ì¦ˆ";
+            case "robin":      return "ë¡œë¹ˆ";
+            case "aina": return "ì•„ì´ë‚˜";
+            case "richard": return "ë¦¬ì²˜ë“œ";
+            default:              return "NPC";
+        }
+    }
 
-            // 3. ÀÔ·ÂÃ¢¿¡ Æ÷Ä¿½º°¡ ¾øÀ» ¶§¸¸ ´ÙÀ½ ¹®Àå ³Ñ±â±â
-            if (inputField == null || !inputField.isFocused)
+void Update()
+{
+    if (dialoguePanel.activeSelf && !isWaitingForServer)
+    {
+        if (Input.GetKeyDown(KeyCode.Escape)) { EndDialogueForced(); return; }
+
+        // â˜… ì˜ˆì „ ì½”ë“œì²˜ëŸ¼ isFocusedë¡œ ì²´í¬
+        if (inputField == null || !inputField.isFocused)
+        {
+            if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
             {
-                if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
+                if (isTyping)
                 {
-                    if (isTyping)
-                    {
-                        StopAllCoroutines();
-                        contentText.text = currentSentence;
-                        isTyping = false;
-                        LayoutRebuilder.ForceRebuildLayoutImmediate(dialoguePanel.GetComponent<RectTransform>());
-                    }
-                    else
-                    {
-                        DisplayNextSentence();
-                    }
+                    StopAllCoroutines();
+                    contentText.text = currentSentence;
+                    isTyping = false;
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(
+                        dialoguePanel.GetComponent<RectTransform>());
+                }
+                else
+                {
+                    DisplayNextSentence();
                 }
             }
         }
     }
+}
 
-    // ´ëÈ­ ½ÃÀÛ (NPCInteraction¿¡¼­ È£Ãâ)
-    public void ShowDialogue(string npcName, string[] dialogueLines, int npcIntimacy = 20)
+    private bool justStarted = false;
+    public void ShowDialogue(string npcId, string[] dialogueLines, int npcIntimacy)
     {
-        currentTalkingNPC = npcName;
-
+        currentTalkingNPCId = npcId;
         dialoguePanel.SetActive(true);
         intimacyPanel.SetActive(true);
-        nameText.text = npcName;
+        
+        nameText.text = GetKoreanName(npcId); // UIì—ëŠ” í•œê¸€ ì´ë¦„
+        UpdateGuide(true, "[ESC] ëŒ€í™” ì¢…ë£Œ");
+        RefreshHeartUI(npcIntimacy / 10);
 
-        // ´ëÈ­ ½ÃÀÛ ½Ã °¡ÀÌµå¸¦ ESC Á¾·á ¾È³»·Î º¯°æ
-        UpdateGuide(true, "[ESC] ´ëÈ­ Á¾·á");
-        //ÇØ´ç npcÀÇ È£°¨µµ Ç¥½Ã
-        int heartCount = Mathf.Clamp(npcIntimacy, 0, 100) / 10;
-        RefreshHeartUI(heartCount);
+        if (inputField != null) inputField.gameObject.SetActive(false);
 
         sentences.Clear();
-        foreach (string line in dialogueLines)
-        {
-            sentences.Enqueue(line);
-        }
-
+        foreach (string line in dialogueLines) sentences.Enqueue(line);
+        justStarted = true;
         DisplayNextSentence();
-    }
-
-    // °­Á¦ Á¾·á ¹× ¹è°æ Å¬¸¯ ½Ã È£Ãâ
-    public void EndDialogueForced()
-    {
-        StopAllCoroutines();
-        sentences.Clear();
-        isTyping = false;
-
-        dialoguePanel.SetActive(false);
-        intimacyPanel.SetActive(false);
-
-        if (inputField != null)
-        {
-            inputField.text = "";
-            inputField.DeactivateInputField();
-            inputField.gameObject.SetActive(false);
-        }
-
-        // ´ëÈ­°¡ Á¾·áµÇ¾úÀ¸¹Ç·Î °¡ÀÌµå ¼û±â±â (¸Ö¾îÁö¸é ´Ù½Ã ¶ã °ÍÀÓ)
-        UpdateGuide(false);
-        Debug.Log("´ëÈ­ °­Á¦ Á¾·á: ÇÃ·¹ÀÌ¾î Á¶ÀÛ±Ç º¹±¸");
     }
 
     public void DisplayNextSentence()
     {
+        // isTyping ê°€ë“œëŠ” ìœ ì§€í•´ë„ OK
+        if (isTyping) return;
+
         if (sentences.Count == 0)
         {
+            // â˜… activeSelf ì²´í¬ ì œê±° â€” ì˜ˆì „ì²˜ëŸ¼ ë‹¨ìˆœí•˜ê²Œ
             if (inputField != null)
             {
                 inputField.gameObject.SetActive(true);
@@ -141,84 +121,84 @@ public class DialogueManager : MonoBehaviour
             return;
         }
 
+        if (inputField != null) inputField.gameObject.SetActive(false);
+
         currentSentence = sentences.Dequeue();
         StopAllCoroutines();
         StartCoroutine(TypeSentence(currentSentence));
     }
 
-    IEnumerator TypeSentence(string sentence)
+    public void OnSubmitInput()
+    {
+        if (inputField == null || string.IsNullOrWhiteSpace(inputField.text)) return;
+        if (isWaitingForServer) return;
+
+        string question = inputField.text;
+        // ì €ì¥ëœ ì˜ì–´ IDë¡œ ì„œë²„ í†µì‹ 
+        StartCoroutine(NetworkManager.Instance.SendChatMessage(currentTalkingNPCId, question));
+
+        inputField.text = "";
+        inputField.gameObject.SetActive(false); 
+        isWaitingForServer = true;
+        StartCoroutine(WaitingDotsAnimation());
+    }
+
+    public void ShowServerResponse(string response, int affinity)
+    {
+        isWaitingForServer = false;
+        StopAllCoroutines();
+        UpdateIntimacy(affinity);
+
+        string[] parsedSentences = response.Split(new[] { "\n", "\r\n" }, System.StringSplitOptions.RemoveEmptyEntries);
+        sentences.Clear();
+        foreach (string line in parsedSentences) sentences.Enqueue(line);
+        
+        DisplayNextSentence();
+    }
+
+    IEnumerator TypeSentence(string s)
     {
         isTyping = true;
         contentText.text = "";
-
-        foreach (char letter in sentence.ToCharArray())
+        foreach (char c in s.ToCharArray())
         {
-            contentText.text += letter;
+            contentText.text += c;
             yield return new WaitForSeconds(typingSpeed);
         }
-        LayoutRebuilder.ForceRebuildLayoutImmediate(dialoguePanel.GetComponent<RectTransform>());
         isTyping = false;
     }
 
-    public void OnSubmitInput()
+    IEnumerator WaitingDotsAnimation()
     {
-        if (inputField == null) return;
-
-        string playerQuestion = inputField.text;
-        if (string.IsNullOrWhiteSpace(playerQuestion)) return;
-
-        // Àü¼Û ½Ã¿¡µµ °¡ÀÌµå´Â À¯ÁöµÇµµ·Ï ÇÔ
-        UpdateGuide(true, "[ESC] ´ëÈ­ Á¾·á");
-
-        StartCoroutine(NetworkManager.Instance.SendChatMessage(nameText.text, playerQuestion));
-
-        inputField.text = "";
-        inputField.DeactivateInputField();
-        inputField.gameObject.SetActive(false);
-
-        contentText.text = "°í¾çÀÌ°¡ »ı°¢ Áß...";
-    }
-
-    // °¡ÀÌµå ÅØ½ºÆ®¿Í È°¼ºÈ­ ¿©ºÎ¸¦ ÇÑ ¹ø¿¡ °ü¸®ÇÏ´Â ÇÔ¼ö
-    public void UpdateGuide(bool show, string message = "")
-    {
-        if (interactionGuide != null)
+        string baseText = $"{GetKoreanName(currentTalkingNPCId)}(ì´)ê°€ ìƒê° ì¤‘";
+        while (isWaitingForServer)
         {
-            interactionGuide.SetActive(show);
-            if (show && guideText != null && !string.IsNullOrEmpty(message))
-            {
-                guideText.text = message;
-            }
+            contentText.text = baseText + "."; yield return new WaitForSeconds(0.5f);
+            if (!isWaitingForServer) break;
+            contentText.text = baseText + ".."; yield return new WaitForSeconds(0.5f);
+            if (!isWaitingForServer) break;
+            contentText.text = baseText + "..."; yield return new WaitForSeconds(0.5f);
         }
     }
 
-    // ±âÁ¸ ToggleGuide´Â ÇÏÀ§ È£È¯¼ºÀ» À§ÇØ À¯Áö (UpdateGuide È£Ãâ)
-    public void ToggleGuide(bool show)
-    {
-        UpdateGuide(show);
+    public void ShowDialogueWaiting(string npcId, int npcIntimacy)
+    {   
+        currentTalkingNPCId = npcId;
+        dialoguePanel.SetActive(true);
+        intimacyPanel.SetActive(true);
+        nameText.text = GetKoreanName(npcId);
+        UpdateGuide(true, "[ESC] ëŒ€í™” ì¢…ë£Œ");
+        RefreshHeartUI(npcIntimacy / 10);
+
+        if (inputField != null) inputField.gameObject.SetActive(false);
+
+        sentences.Clear();
+        isWaitingForServer = true;
+        StartCoroutine(WaitingDotsAnimation());
     }
 
-    public void HideDialogue()
-    {
-        EndDialogueForced(); // ·ÎÁ÷ Áßº¹ ¹æÁö¸¦ À§ÇØ °­Á¦ Á¾·á ÇÔ¼ö È£Ãâ
-    }
-
-    // ÇÏÆ® UI¸¸ »õ·Ó°Ô ±×·ÁÁÖ´Â ÇÔ¼ö
-    private void RefreshHeartUI(int score)
-    {
-        for (int i = 0; i < heartImages.Length; i++)
-        {
-            heartImages[i].sprite = (i < score) ? fullHeart : emptyHeart;
-        }
-    }
-
-    // ¼­¹ö ÀÀ´ä µî¿¡¼­ È£°¨µµ°¡ º¯ÇßÀ» ¶§ È£Ãâ
-    public void UpdateIntimacy(int finalValue)
-    {
-        // 0~100 »çÀÌ·Î ¾ÈÀüÇÏ°Ô Á¦ÇÑ ÈÄ 10À¸·Î ³ª´² ÇÏÆ® °³¼ö °è»ê
-        int heartCount = Mathf.Clamp(finalValue, 0, 100) / 10;
-        RefreshHeartUI(heartCount);
-
-        Debug.Log($"{currentTalkingNPC} ¼­¹ö ÃÖÁ¾ È£°¨µµ ¼ö½Å: {finalValue}Á¡ -> ÇÏÆ® {heartCount}°³");
-    }
+    public void EndDialogueForced() { isWaitingForServer = false; StopAllCoroutines(); dialoguePanel.SetActive(false); intimacyPanel.SetActive(false); UpdateGuide(false); }
+    private void RefreshHeartUI(int s) { for (int i = 0; i < heartImages.Length; i++) heartImages[i].sprite = (i < s) ? fullHeart : emptyHeart; }
+    public void UpdateIntimacy(int v) { RefreshHeartUI(Mathf.Clamp(v, 0, 100) / 10); }
+    public void UpdateGuide(bool s, string m = "") { if (interactionGuide != null) { interactionGuide.SetActive(s); var t = interactionGuide.GetComponentInChildren<TextMeshProUGUI>(); if(s && t != null) t.text = m; } }
 }

@@ -1,14 +1,14 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro; // TextMeshPro¸¦ ¾²±â À§ÇØ ÇÊ¼ö
+using TMPro; // TextMeshProë¥¼ ì“°ê¸° ìœ„í•´ í•„ìˆ˜
 
 public class Cat1Controller : MonoBehaviour
 {
     private Animator animator;
 
-    // ¾Ö´Ï¸ŞÀÌÅÍ ÆÄ¶ó¹ÌÅÍ ÀÎµ¦½º Á¤ÀÇ
+    // ì• ë‹ˆë©”ì´í„° íŒŒë¼ë¯¸í„° ì¸ë±ìŠ¤ ì •ì˜
     private const int IDLE = 0;
     private const int LEAKING1 = 1;
     private const int LEAKING2 = 2;
@@ -16,12 +16,12 @@ public class Cat1Controller : MonoBehaviour
     private const int STRETCHING = 4;
     private const int SLEEPING = 5;
 
-    [Header("½Ã°£ ¼³Á¤")]
+    [Header("ì‹œê°„ ì„¤ì •")]
     public float normalMinTime = 3.0f;
     public float normalMaxTime = 6.0f;
     public float sleepMinTime = 15.0f;
     public float sleepMaxTime = 30.0f;
-    public float stretchingTime = 1.0f; // ½ºÆ®·¹Äª °íÁ¤ ½Ã°£ 1ÃÊ
+    public float stretchingTime = 1.0f; // ìŠ¤íŠ¸ë ˆì¹­ ê³ ì • ì‹œê°„ 1ì´ˆ
 
     void Start()
     {
@@ -40,17 +40,17 @@ public class Cat1Controller : MonoBehaviour
                 animator.SetInteger("ActionIndex", IDLE);
                 yield return new WaitForSeconds(Random.Range(normalMinTime, normalMaxTime));
             }
-            else if (roll < 70) // 30% : LEAKING (1 È¤Àº 2 ·£´ı)
+            else if (roll < 70) // 30% : LEAKING (1 í˜¹ì€ 2 ëœë¤)
             {
                 int leakIndex = Random.Range(1, 3);
                 animator.SetInteger("ActionIndex", leakIndex);
                 yield return new WaitForSeconds(Random.Range(normalMinTime, normalMaxTime));
             }
-            else if (roll < 90) // 20% : STRETCHING (µü 1ÃÊ¸¸!)
+            else if (roll < 90) // 20% : STRETCHING (ë”± 1ì´ˆë§Œ!)
             {
                 animator.SetInteger("ActionIndex", STRETCHING);
-                //Debug.Log("°í¾çÀÌ°¡ ½Ã¿øÇÏ°Ô ±âÁö°³¸¦ ÄÕ´Ï´Ù (1ÃÊ)");
-                yield return new WaitForSeconds(stretchingTime); // 1.0f ´ë±â
+                //Debug.Log("ê³ ì–‘ì´ê°€ ì‹œì›í•˜ê²Œ ê¸°ì§€ê°œë¥¼ ì¼­ë‹ˆë‹¤ (1ì´ˆ)");
+                yield return new WaitForSeconds(stretchingTime); // 1.0f ëŒ€ê¸°
             }
             else // 10% : LAYING & SLEEPING
             {
