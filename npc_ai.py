@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import time  
 import google.generativeai as genai
 from dotenv import load_dotenv
 
@@ -15,13 +16,13 @@ genai.configure(api_key=API_KEY)
 # 서버 담당자 용
 # 유니티에서 통신이 오면 서버(FastAPI 등)가 이 함수를 호출해서 결과를 받아감
 # =====================================================================
-def get_npc_response(npc_id, current_affinity, user_message):
+def get_npc_response(npc_id, current_affinity, user_message, quest_data=None):
     # npc_id("robin", "cheese" 등)에 맞는 프롬프트 꺼내기
     system_instruction = npc_prompts.get(npc_id)
     
     # 등록되지 않은 npc_id가 들어오면 에러 방지
     if not system_instruction:
-        return {"reply": ["(시스템: 존재하지 않는 NPC입니다.)"], "affinity_change": 0, "animation": "idle"}
+        return {"reply": ["(시스템: 존재하지 않는 NPC입니다.)"], "affinity_change": 0, "animation": "idle", "is_request_accepted": None}
     
     # 모델 세팅 (Flash Lite)
     model = genai.GenerativeModel(
@@ -30,31 +31,38 @@ def get_npc_response(npc_id, current_affinity, user_message):
         generation_config={"temperature": 0.5}
     )
 
-    # 운세 강제 지시 로직
-    system_injection = ""
+    # ---------------------------------------------------------
+    # [핵심 로직] 시스템 메모(쪽지) 조립
+    # ---------------------------------------------------------
+    system_memo = ""
+
+    # 1. 운세 강제 지시 로직
     if npc_id == "cheese" and "!운세" in user_message:
-        # 파이썬이 진짜 랜덤으로 하나를 뽑음
         fortunes = ["대길", "길", "중길", "소길", "흉"]
         chosen_fortune = random.choice(fortunes)
-        
-        # AI에게 이번 운세가 무엇인지 강제로 지시하는 문구 생성
-        system_injection = f"\n[시스템 강제 지시: 이번 턴의 운세는 반드시 '{chosen_fortune}'(으)로 설정하여 대답할 것]"
-    
+        system_memo += f"\n[시스템 강제 지시: 이번 턴의 운세는 반드시 '{chosen_fortune}'(으)로 설정하여 대답할 것]"
+
+    # 2. 퀘스트(의뢰) 상태 지시 로직
+    if quest_data:
+        if quest_data["status"] == "in_progress":
+            system_memo += f"\n[시스템 강제 지시: 너는 현재 플레이어의 의뢰('{quest_data['quest_name']}')를 수행 중이다. 아직 완성되지 않았으니 작업 중이라고 대답해라.]"
+        elif quest_data["status"] == "completed_just_now":
+            system_memo += f"\n[시스템 강제 지시: 방금 '{quest_data['quest_name']}' 의뢰가 완료되었다! 결과물을 건네주며 생색을 내거나 뿌듯해하는 대사를 해라.]"
+
     # 데이터 조립 및 API 호출
-    prompt = f"[현재 호감도: {current_affinity}]\n플레이어: {user_message}"
+    prompt = f"[현재 호감도: {current_affinity}]{system_memo}\n플레이어: {user_message}"
     response = model.generate_content(prompt)
     
     # JSON 파싱 / 예외 처리 방어 로직
     try:
-        # 마크다운 찌꺼기(```json) 제거 후 순수 딕셔너리로 변환
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         result_data = json.loads(clean_text)
         return result_data
         
     except json.JSONDecodeError:
         print(f"[파싱 에러 로그] 원본 텍스트: {response.text}")
-        # 에러 시 게임이 뻗지 않도록 기본값 반환
-        return {"reply": ["(시스템: NPC가 대답을 망설이고 있습니다. 다시 말 걸어주세요.)"], "affinity_change": 0, "animation": "idle"}
+        return {"reply": ["(시스템: NPC가 대답을 망설이고 있습니다. 다시 말 걸어주세요.)"], "affinity_change": 0, "animation": "idle", "is_request_accepted": None}
+
 
 
 # =====================================================================
@@ -71,9 +79,17 @@ if __name__ == "__main__":
     
     if target_npc:
         print(f"\n[{target_npc.upper()}] 와의 대화를 시작합니다. (종료하려면 'q' 입력)")
-        # 테스트용 임시 호감도 (실제 게임에선 DB에서 가져와야 함)
         test_affinity = 20 
         
+        # ---------------------------------------------------------
+        # 테스트용 가상 DB 생성 (서버 데이터베이스 역할)
+        # ---------------------------------------------------------
+        mock_db = {
+            "is_working": False,
+            "quest_name": "",
+            "completion_time": 0
+        }
+
         while True:
             user_input = input("\n▶ 플레이어: ")
             if user_input.lower() == 'q':
@@ -82,18 +98,52 @@ if __name__ == "__main__":
                 
             print(f"{target_npc}가 대답을 생각 중입니다...\n")
             
-            # 
-            npc_reply = get_npc_response(target_npc, test_affinity, user_input)
+            # --- 1. 대화 시작 전 현재 시간과 DB 상태 체크 ---
+            current_time = time.time()
+            quest_data_to_send = None
             
+            if mock_db["is_working"]:
+                if current_time < mock_db["completion_time"]:
+                    quest_data_to_send = {"status": "in_progress", "quest_name": mock_db["quest_name"]}
+                else:
+                    quest_data_to_send = {"status": "completed_just_now", "quest_name": mock_db["quest_name"]}
+            
+            # --- 2. AI에게 질문 던지기 ---
+            npc_reply = get_npc_response(target_npc, test_affinity, user_input, quest_data_to_send)
+            
+            # --- 3. 완료 상태였다면 DB 초기화 (보상 지급 시점) ---
+            if quest_data_to_send and quest_data_to_send["status"] == "completed_just_now":
+                print(f"[서버 시스템: 유저 인벤토리에 '{mock_db['quest_name']}' 아이템이 지급되었습니다!]")
+                mock_db["is_working"] = False 
+
+            # --- 4. 대화 출력 ---
             print("=== NPC 응답 결과 ===")
             for idx, line in enumerate(npc_reply.get("reply", [])):
                 print(f"대사 {idx+1}: {line}")
             print(f"호감도 변화: {npc_reply.get('affinity_change')}")
             print(f"애니메이션: {npc_reply.get('animation')}")
+            print(f"의뢰 수락 여부: {npc_reply.get('is_request_accepted')}")
             
-            # 테스트용 호감도 실시간 반영
+            # --- 5. 의뢰 신규 수락 시 타이머 시작 (리처드 예외 처리 추가) ---
+            is_accepted = npc_reply.get("is_request_accepted")
+            if is_accepted is True and "!의뢰" in user_input:
+                quest_content = user_input.replace("!의뢰", "").strip()
+                
+                if target_npc == "richard":
+                    # 리처드는 타이머 없이 즉시 허가증 발급
+                    print(f"\n[서버 시스템: '{target_npc}'가 허가했습니다! 즉시 인벤토리에 '{quest_content} 허가증'이 지급됩니다!]")
+                else:
+                    # 다른 NPC는 정상적으로 작업 타이머 시작
+                    print(f"\n[서버 시스템: '{target_npc}'가 의뢰를 수락했습니다! 30초 타이머를 시작합니다.]")
+                    mock_db["is_working"] = True
+                    mock_db["quest_name"] = quest_content
+                    mock_db["completion_time"] = time.time() + 30  # 30초 뒤 완료
+                    
+            elif is_accepted is False and "!의뢰" in user_input:
+                print("\n[서버 시스템: NPC가 의뢰를 거절했습니다. DB에 저장하지 않습니다.]")
+            
+            # --- 6. 호감도 반영 ---
             test_affinity += npc_reply.get('affinity_change', 0)
-            # 호감도는 0~100 사이 유지
             test_affinity = max(0, min(100, test_affinity)) 
             print(f"(현재 누적 호감도: {test_affinity})")
             
