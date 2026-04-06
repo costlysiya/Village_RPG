@@ -99,19 +99,22 @@ def get_npc_response(npc_id, current_affinity, user_message, chat_history=None, 
                 "is_request_accepted": None}
 
 
-def generate_npc_gossip(npc_a_id, npc_b_id, system_instruction=None):
-    # prompts.py에서 두 NPC의 전체 성격/말투 설정을 통째로 가져옵니다 (통짜 문자열)
+
+# npc_ai.py의 소문 생성기 수정
+
+# 파라미터에 time_of_day="evening" (낮->밤) 을 추가했습니다.
+def generate_npc_gossip(npc_a_id, npc_b_id, time_of_day="evening"):
     prompt_a = npc_prompts.get(npc_a_id, "설정 없음")
     prompt_b = npc_prompts.get(npc_b_id, "설정 없음")
 
-    # AI 모델 선언 (이거 없으면 또 에러 납니다!)
-    model = genai.GenerativeModel(
-        model_name='gemini-3.1-flash-lite-preview',
-        system_instruction=system_instruction,
-        generation_config={"temperature": 0.5}
-    )
+    model = genai.GenerativeModel('gemini-3.1-flash-lite-preview')
 
-    # 프롬프트 수정: 이름['name']을 뽑아내는 대신, 통짜 설정 글(prompt_a)을 통째로 줍니다!
+    # 👇 [핵심] 시간대에 맞춰 AI에게 주는 상황(Context)을 바꿉니다!
+    if time_of_day == "evening":
+        time_context = "[상황] 하루 해가 저물고 밤이 되었습니다. 두 사람이 일과를 마치고 쉬면서, '오늘 낮에 있었던 일'이나 '낮에 플레이어가 한 행동'에 대해 뒷담화를 나눕니다."
+    else:  # "morning" (밤->낮)
+        time_context = "[상황] 아침이 밝았습니다. 두 사람이 아침 일찍 만나, '어젯밤에 들렸던 이상한 소리', '간밤의 꿈', 또는 '오늘 하루의 계획'에 대해 은밀히 이야기합니다."
+
     prompt = f"""
     당신은 게임 속 두 NPC의 대화를 작성하는 드라마 작가입니다.
     아래는 두 NPC의 완벽한 성격과 말투, 세계관 설정입니다.
@@ -122,10 +125,7 @@ def generate_npc_gossip(npc_a_id, npc_b_id, system_instruction=None):
     [NPC B 설정]
     {prompt_b}
 
-    [상황]
-    플레이어가 마을에 없을 때, 두 사람이 우연히 만나 가벼운 대화를 나눕니다.
-    서로에 대한 관계망을 적극 활용해서 대화하세요.
-    주제는 최근 마을에 나타난 플레이어에 대한 이야기나 일상적인 고민입니다.
+    {time_context}
 
     [작성 규칙]
     - 위 설정된 성격과 말투를 완벽하게 반영하여 티키타카가 되는 짧은 대화문(3~4줄)을 작성하세요.
@@ -133,19 +133,15 @@ def generate_npc_gossip(npc_a_id, npc_b_id, system_instruction=None):
 
     [형식]
     대화:
-    로빈: (대사)
-    올리비아: (대사)
+    (대사 내용)
 
     요약: (이 대화를 다른 사람이 들었을 때 낼 만한 '한 줄짜리 소문' 작성)
     """
 
     response = model.generate_content(prompt)
     text = response.text
-
-    # 터미널에서 구경하기 위해 출력
     print(f"\n🎭 [비밀 대화 발생] {npc_a_id}와(과) {npc_b_id}가 만났습니다:\n{text}\n")
 
-    # "요약:" 뒷부분만 추출해서 리턴
     if "요약:" in text:
         summary = text.split("요약:")[1].strip()
         return summary
@@ -197,6 +193,7 @@ if __name__ == "__main__":
                                          quest_data=quest_data_to_send)
 
             if quest_data_to_send and quest_data_to_send["status"] == "completed_just_now":
+                print(f"[서버 시스템: 유저 인벤토리에 '{mock_db['quest_name']}' 아이템이 지급되었습니다!]")
                 print(f"[서버 시스템: 유저 인벤토리에 '{mock_db['quest_name']}' 아이템이 지급되었습니다!]")
                 mock_db["is_working"] = False
 

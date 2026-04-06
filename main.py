@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import asyncio
 import random
 import time # 시간 계산을 위해 추가
 
@@ -150,6 +151,49 @@ async def trigger_gossip():
         "message": f"[{npc_a}]와(과) [{npc_b}]의 새로운 소문이 생성되었습니다!",
         "gossip": gossip_content
     }
+
+current_time_state = "day"
+
+@app.get("/api/time")
+async def get_current_time():
+    # 서버 메모장(current_time_state)에 적힌 시간을 그대로 유니티에 보내줍니다!
+    return {"time_of_day": current_time_state}
+
+# =========================================================
+# ⏰ [자동화 스케줄러] 낮(20분) / 밤(10분) 사이클 무한 반복
+# =========================================================
+async def time_cycle_loop():
+    global current_time_state
+    available_npcs = ["robin", "aina", "richard", "olivia"]
+
+    while True:
+        # ☀️ 1. 낮 시간 시작 (20분 유지)
+        current_time_state = "day"
+        print("\n☀️ [서버 시스템] 아침이 밝았습니다! (현재: 낮 / 20분 대기)")
+        await asyncio.sleep(20*60)  # 20분 대기
+
+        # 낮 -> 밤 전환 순간! (저녁 소문 생성)
+        npc_a, npc_b = random.sample(available_npcs, 2)
+        print(f"🌙 [서버 시스템] 해가 집니다. {npc_a}와(과) {npc_b}가 낮에 있었던 일로 뒷담화를 시작합니다...")
+        gossip_content = generate_npc_gossip(npc_a, npc_b, time_of_day="evening")
+        save_npc_gossip(npc_a, npc_b, gossip_content)
+
+        # 🌙 2. 밤 시간 시작 (10분 유지)
+        current_time_state = "night"
+        print("\n🌙 [서버 시스템] 밤이 깊었습니다. (현재: 밤 / 10분 대기)")
+        await asyncio.sleep(10*60)  # 10분 대기
+
+        # 밤 -> 낮 전환 순간! (아침 소문 생성)
+        npc_a, npc_b = random.sample(available_npcs, 2)
+        print(f"☀️ [서버 시스템] 아침이 밝아옵니다. {npc_a}와(과) {npc_b}가 간밤의 일에 대해 이야기합니다...")
+        gossip_content = generate_npc_gossip(npc_a, npc_b, time_of_day="morning")
+        save_npc_gossip(npc_a, npc_b, gossip_content)
+
+
+# FastAPI 서버가 켜질 때, 위에서 만든 '시계(루프)'를 같이 켜주는 명령어입니다.
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(time_cycle_loop())
 
 @app.get("/")
 def read_root():
