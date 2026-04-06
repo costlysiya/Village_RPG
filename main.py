@@ -36,12 +36,35 @@ class ChatResponse(BaseModel):
     intimacy_change: int
     final_affinity: int
 
-# 👇 [새로 추가] 유니티가 건물을 지을 때 서버로 보낼 데이터 양식입니다.
+# 유니티가 플레이어 이름을 정해서 보낼 때 쓸 양식
+class PlayerNameRequest(BaseModel):
+    new_name: str
+
+# 유니티가 건물을 지을 때 서버로 보낼 데이터 양식입니다.
 class BuildRequest(BaseModel):
     object_name: str
     x: float
     y: float
     z: float
+
+# =========================================================
+# 👤 [플레이어 정보] 이름 저장 및 불러오기
+# =========================================================
+# 서버가 기억할 플레이어의 현재 이름 (기본값은 '여행자'로 해둘게요!)
+current_player_name = "다은"
+
+# 1. 유니티에서 유저가 이름을 입력했을 때 서버에 저장하는 창구 (POST)
+@app.post("/api/player")
+async def set_player_name(request: PlayerNameRequest):
+    global current_player_name
+    current_player_name = request.new_name
+    print(f"👤 [서버 시스템] 플레이어의 이름이 '{current_player_name}'(으)로 설정되었습니다!")
+    return {"message": f"이름이 {current_player_name}(으)로 성공적으로 저장되었습니다!"}
+
+# 2. 유니티가 현재 플레이어 이름이 뭔지 물어볼 때 대답해주는 창구 (GET)
+@app.get("/api/player")
+async def get_player_name():
+    return {"player_name": current_player_name}
 
 
 # 4. 채팅 API 엔드포인트
@@ -68,6 +91,7 @@ async def chat_with_npc(request: ChatRequest):
             quest_data_to_send = {"status": "completed_just_now", "quest_name": quest_data["quest_name"]}
 
     # 3. AI 뇌 호출 (기억력 + 퀘스트 메모 동시 주입!)
+    message_with_name = f"[{current_player_name}]: {request.player_message}"
     ai_result = get_npc_response(
         request.npc_id, start_affinity, request.player_message,
         chat_history=recent_history, quest_data=quest_data_to_send
@@ -131,17 +155,6 @@ async def load_village():
     print(f"🌳 [마을 불러오기] 총 {len(saved_objects)}개의 물건을 유니티로 보냅니다.")
     return {"objects": saved_objects}
 
-@app.get("/api/npcs")
-async def get_npc_list():
-    # 마을에 살고 있는 NPC들의 정확한 ID 목록입니다.
-    npc_list = [
-        {"id": "robin", "name": "로빈", "job": "목수"},
-        {"id": "aina", "name": "아이나", "job": "식물학자"},
-        {"id": "richard", "name": "리처드", "job": "촌장"},
-        {"id": "olivia", "name": "올리비아", "job": "식당 주인"},
-        {"id": "Yellow Cat", "name": "치즈", "job": "길고양이"}
-    ]
-    return {"npc_list": npc_list}
 
 
 @app.post("/api/system/generate-gossip")
