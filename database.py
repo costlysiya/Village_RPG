@@ -56,12 +56,22 @@ def init_db():
             )
         """)
 
+    # 소문 장부 테이블 추가
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS npc_gossip (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_npc TEXT,          -- 말을 꺼낸 NPC
+                to_npc TEXT,            -- 듣는 NPC
+                content TEXT,           -- 소문 내용 (대화 요약)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_heard_by_player INTEGER DEFAULT 0 -- 플레이어가 나중에 들었는지 체크 (0: 못들음, 1: 들음)
+            )
+        """)
     conn.commit()
     conn.close()
     print("✅ 데이터베이스 창고 준비 완료! (objects 추가됨)")
 
 
-# --- (기존 호감도 함수들 그대로 유지) ---
 def get_npc_affinity(npc_id: str) -> int:
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -82,7 +92,7 @@ def update_npc_affinity(npc_id: str, new_affinity: int):
     conn.close()
 
 
-# 👇 [새로 추가된 기능 1] 대화 내용을 창고에 한 줄 적는 함수
+# 대화 내용을 창고에 한 줄 적는 함수
 def save_chat_message(npc_id: str, speaker: str, message: str):
     # speaker 자리에는 'player' 또는 'npc' 라는 글자가 들어갈 겁니다.
     conn = sqlite3.connect(DB_NAME)
@@ -95,7 +105,7 @@ def save_chat_message(npc_id: str, speaker: str, message: str):
     conn.close()
 
 
-# 👇 [새로 추가된 기능 2] AI에게 알려주기 위해 최근 대화 N개를 꺼내오는 함수
+#  AI에게 알려주기 위해 최근 대화 N개를 꺼내오는 함수
 def get_recent_chat_history(npc_id: str, limit: int = 5):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -116,7 +126,7 @@ def get_recent_chat_history(npc_id: str, limit: int = 5):
     return results
 
 
-# 👇 [건물 기능 1] 새로운 물건을 마을에 배치할 때 쓰는 함수
+# [건물 기능 1] 새로운 물건을 마을에 배치할 때 쓰는 함수
 def place_object(object_name: str, x: float, y: float, z: float):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -128,7 +138,7 @@ def place_object(object_name: str, x: float, y: float, z: float):
     conn.close()
 
 
-# 👇 [건물 기능 2] 유니티가 켜질 때 마을의 모든 물건 위치를 싹 다 가져가는 함수
+# [건물 기능 2] 유니티가 켜질 때 마을의 모든 물건 위치를 싹 다 가져가는 함수
 def get_all_objects():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -196,6 +206,40 @@ def add_inventory_item(item_name: str, amount: int = 1):
         VALUES (?, ?)
         ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + ?
     """, (item_name, amount, amount))
+    conn.commit()
+    conn.close()
+
+
+# 소문을 저장하는 함수
+def save_npc_gossip(from_npc, to_npc, content):
+    conn = sqlite3.connect("village.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO npc_gossip (from_npc, to_npc, content) VALUES (?, ?, ?)",
+                   (from_npc, to_npc, content))
+    conn.commit()
+    conn.close()
+
+
+# 플레이어에게 들려줄 신선한 소문 하나 가져오는 함수
+def get_random_unheard_gossip():
+    conn = sqlite3.connect("village.db")
+    cursor = conn.cursor()
+    # 아직 안 들은 소문 중 가장 최근 것 중 하나를 랜덤하게 가져옴
+    cursor.execute(
+        "SELECT id, from_npc, content FROM npc_gossip WHERE is_heard_by_player = 0 ORDER BY created_at DESC LIMIT 5")
+    rows = cursor.fetchall()
+    conn.close()
+
+    if rows:
+        import random
+        return random.choice(rows)
+    return None
+
+# 플레이어가 소문을 들었다고 장부에 '읽음(1)' 체크하기
+def mark_gossip_as_heard(gossip_id):
+    conn = sqlite3.connect("village.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE npc_gossip SET is_heard_by_player = 1 WHERE id = ?", (gossip_id,))
     conn.commit()
     conn.close()
 

@@ -1,6 +1,8 @@
 venv/
+.venv/
 .env
 __pycache__/
+village.db
 
 # This .gitignore file should be placed at the root of your Unity project directory
 #

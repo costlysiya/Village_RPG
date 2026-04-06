@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from npc_ai import get_npc_response     #ai함수 가져옴
-from database import get_npc_affinity, update_npc_affinity, save_chat_message, get_recent_chat_history, place_object, get_all_objects  #db 불러옴
+import random
 import time # 시간 계산을 위해 추가
-from database import (
+
+from npc_ai import get_npc_response, generate_npc_gossip  # ai함수 가져옴
+from database import (  # db 불러옴
     get_npc_affinity, update_npc_affinity, save_chat_message, get_recent_chat_history,
-    place_object, get_all_objects,
+    place_object, get_all_objects, save_npc_gossip,
     save_quest_status, get_quest_status, delete_quest, add_inventory_item
 )
 
@@ -128,6 +129,27 @@ async def load_village():
     saved_objects = get_all_objects()
     print(f"🌳 [마을 불러오기] 총 {len(saved_objects)}개의 물건을 유니티로 보냅니다.")
     return {"objects": saved_objects}
+
+
+@app.post("/api/system/generate-gossip")
+async def trigger_gossip():
+    # 1. 대화 가능한 NPC 목록 만들기
+    # (참고: '치즈'는 설정상 다른 주민들과 대화가 안 되는 고양이라서 제외했습니다!)
+    available_npcs = ["robin", "aina", "richard", "olivia"]
+
+    # 2. 목록에서 겹치지 않게 랜덤으로 2명 뽑기
+    npc_a, npc_b = random.sample(available_npcs, 2)
+
+    # 3. 뽑힌 두 명으로 비밀 대화 생성하기
+    gossip_content = generate_npc_gossip(npc_a, npc_b)
+
+    # 4. DB 장부에 누구랑 누가 대화했는지 기록하기
+    save_npc_gossip(npc_a, npc_b, gossip_content)
+
+    return {
+        "message": f"[{npc_a}]와(과) [{npc_b}]의 새로운 소문이 생성되었습니다!",
+        "gossip": gossip_content
+    }
 
 @app.get("/")
 def read_root():

@@ -4,8 +4,8 @@ import random
 import time  # A 친구가 추가한 모듈
 import google.generativeai as genai
 from dotenv import load_dotenv
-
 from prompts import npc_prompts
+from database import get_random_unheard_gossip, mark_gossip_as_heard
 
 # API 키 세팅
 load_dotenv()
@@ -22,10 +22,22 @@ def get_npc_response(npc_id, current_affinity, user_message, chat_history=None, 
     # npc_id("robin", "Yellow Cat" 등)에 맞는 프롬프트 꺼내기
     system_instruction = npc_prompts.get(npc_id)
 
-    # 등록되지 않은 npc_id가 들어오면 에러 방지 (is_request_accepted 추가됨)
+    # 등록되지 않은 npc_id가 들어오면 에러 방지
     if not system_instruction:
         return {"reply": ["(시스템: 존재하지 않는 NPC입니다.)"], "affinity_change": 0, "animation": "idle",
                 "is_request_accepted": None}
+
+    # ---------------------------------------------------------
+    # [소문 로직] DB에서 아직 안 들은 소문 몰래 가져오기
+    # ---------------------------------------------------------
+    gossip_data = get_random_unheard_gossip()
+    gossip_text = ""
+    gossip_id = None
+
+    if gossip_data:
+        gossip_id, from_npc, content = gossip_data
+        # AI 프롬프트에 몰래 지시사항을 끼워 넣습니다.
+        gossip_text = f"\n[특별 시스템 지시사항: 당신은 최근 마을에서 '{content}' 라는 소문을 들었습니다. 플레이어의 말에 대답하면서 이 소문 내용을 아주 자연스럽게 슬쩍 언급해 주세요! 단, 출력 형식(JSON)은 절대 망가뜨리지 마세요.]\n"
 
     # 모델 세팅 (Flash Lite)
     model = genai.GenerativeModel(
@@ -39,20 +51,24 @@ def get_npc_response(npc_id, current_affinity, user_message, chat_history=None, 
     # ---------------------------------------------------------
     system_memo = ""
 
-    # 1. 운세 강제 지시 로직 (Yellow Cat으로 통일!)
+    # 👇 [추가된 부분 1] 기껏 가져온 소문 지시사항을 메모장에 붙여줍니다!
+    if gossip_text:
+        system_memo += gossip_text
+
+    # 1. 운세 강제 지시 로직
     if npc_id == "Yellow Cat" and "!운세" in user_message:
         fortunes = ["대길", "길", "중길", "소길", "흉"]
         chosen_fortune = random.choice(fortunes)
         system_memo += f"\n[시스템 강제 지시: 이번 턴의 운세는 반드시 '{chosen_fortune}'(으)로 설정하여 대답할 것]"
 
-    # 2. 퀘스트(의뢰) 상태 지시 로직 (친구 코드)
+    # 2. 퀘스트(의뢰) 상태 지시 로직
     if quest_data:
         if quest_data["status"] == "in_progress":
             system_memo += f"\n[시스템 강제 지시: 너는 현재 플레이어의 의뢰('{quest_data['quest_name']}')를 수행 중이다. 아직 완성되지 않았으니 작업 중이라고 대답해라.]"
         elif quest_data["status"] == "completed_just_now":
             system_memo += f"\n[시스템 강제 지시: 방금 '{quest_data['quest_name']}' 의뢰가 완료되었다! 결과물을 건네주며 생색을 내거나 뿌듯해하는 대사를 해라.]"
 
-    # 3. 과거 대화 기록 추가 로직 (다은님 코드)
+    # 3. 과거 대화 기록 추가 로직
     history_text = ""
     if chat_history:
         history_text = "\n[최근 대화 기록]\n"
@@ -62,7 +78,7 @@ def get_npc_response(npc_id, current_affinity, user_message, chat_history=None, 
     else:
         history_text = "\n[최근 대화 기록]\n없음 (이번이 첫 대화야!)\n"
 
-    # 데이터 조립 및 API 호출 (기억력 + 퀘스트 메모 융합)
+    # 데이터 조립 및 API 호출 (기억력 + 퀘스트 메모 + 소문 융합)
     prompt = f"[현재 호감도: {current_affinity}]{history_text}{system_memo}\n플레이어: {user_message}"
     response = model.generate_content(prompt)
 
@@ -70,6 +86,11 @@ def get_npc_response(npc_id, current_affinity, user_message, chat_history=None, 
     try:
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         result_data = json.loads(clean_text)
+
+        # 👇 [추가된 부분 2] AI가 대답을 성공적으로 만들었으니, DB 장부에 '읽었음' 체크!
+        if gossip_id is not None:
+            mark_gossip_as_heard(gossip_id)
+
         return result_data
 
     except json.JSONDecodeError:
@@ -77,6 +98,58 @@ def get_npc_response(npc_id, current_affinity, user_message, chat_history=None, 
         return {"reply": ["(시스템: NPC가 대답을 망설이고 있습니다. 다시 말 걸어주세요.)"], "affinity_change": 0, "animation": "idle",
                 "is_request_accepted": None}
 
+
+def generate_npc_gossip(npc_a_id, npc_b_id, system_instruction=None):
+    # prompts.py에서 두 NPC의 전체 성격/말투 설정을 통째로 가져옵니다 (통짜 문자열)
+    prompt_a = npc_prompts.get(npc_a_id, "설정 없음")
+    prompt_b = npc_prompts.get(npc_b_id, "설정 없음")
+
+    # AI 모델 선언 (이거 없으면 또 에러 납니다!)
+    model = genai.GenerativeModel(
+        model_name='gemini-3.1-flash-lite-preview',
+        system_instruction=system_instruction,
+        generation_config={"temperature": 0.5}
+    )
+
+    # 프롬프트 수정: 이름['name']을 뽑아내는 대신, 통짜 설정 글(prompt_a)을 통째로 줍니다!
+    prompt = f"""
+    당신은 게임 속 두 NPC의 대화를 작성하는 드라마 작가입니다.
+    아래는 두 NPC의 완벽한 성격과 말투, 세계관 설정입니다.
+
+    [NPC A 설정]
+    {prompt_a}
+
+    [NPC B 설정]
+    {prompt_b}
+
+    [상황]
+    플레이어가 마을에 없을 때, 두 사람이 우연히 만나 가벼운 대화를 나눕니다.
+    서로에 대한 관계망을 적극 활용해서 대화하세요.
+    주제는 최근 마을에 나타난 플레이어에 대한 이야기나 일상적인 고민입니다.
+
+    [작성 규칙]
+    - 위 설정된 성격과 말투를 완벽하게 반영하여 티키타카가 되는 짧은 대화문(3~4줄)을 작성하세요.
+    - JSON 양식을 무시하고, 아래 [형식]에 맞춰 일반 텍스트로만 출력하세요.
+
+    [형식]
+    대화:
+    로빈: (대사)
+    올리비아: (대사)
+
+    요약: (이 대화를 다른 사람이 들었을 때 낼 만한 '한 줄짜리 소문' 작성)
+    """
+
+    response = model.generate_content(prompt)
+    text = response.text
+
+    # 터미널에서 구경하기 위해 출력
+    print(f"\n🎭 [비밀 대화 발생] {npc_a_id}와(과) {npc_b_id}가 만났습니다:\n{text}\n")
+
+    # "요약:" 뒷부분만 추출해서 리턴
+    if "요약:" in text:
+        summary = text.split("요약:")[1].strip()
+        return summary
+    return "별다른 소문이 없습니다."
 
 # =====================================================================
 # 이 파일만 단독으로 실행했을 때 터미널에서 대화해 볼 수 있는 기능
