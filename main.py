@@ -131,6 +131,18 @@ async def load_village():
     print(f"🌳 [마을 불러오기] 총 {len(saved_objects)}개의 물건을 유니티로 보냅니다.")
     return {"objects": saved_objects}
 
+@app.get("/api/npcs")
+async def get_npc_list():
+    # 마을에 살고 있는 NPC들의 정확한 ID 목록입니다.
+    npc_list = [
+        {"id": "robin", "name": "로빈", "job": "목수"},
+        {"id": "aina", "name": "아이나", "job": "식물학자"},
+        {"id": "richard", "name": "리처드", "job": "촌장"},
+        {"id": "olivia", "name": "올리비아", "job": "식당 주인"},
+        {"id": "Yellow Cat", "name": "치즈", "job": "길고양이"}
+    ]
+    return {"npc_list": npc_list}
+
 
 @app.post("/api/system/generate-gossip")
 async def trigger_gossip():
